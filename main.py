@@ -9,6 +9,7 @@ import random
 import matplotlib.pyplot as plt
 from ModelDesign import AutoEncoder, DatasetFolder, NMSE_cuda, NMSELoss
 import time
+from network import CsiNetPlus
 #from torchsummary import summary
 
 # Parameters for training
@@ -29,10 +30,11 @@ epochs=100
 batchsize=200
 iter=500
 numworkers=0
-learning_rate = 1e-3
+learning_rate = 8e-5
 
 #实例化模型
-model=AutoEncoder(img_channels,img_height,img_width,4).to(device)
+#model=AutoEncoder(img_channels,img_height,img_width,4).to(device)     #CSINET
+model=CsiNetPlus().to(device)                                          #CSINET+
 
 #损失函数 改用MSE为损失函数
 criterion = NMSELoss(reduction='mean')
@@ -43,9 +45,9 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 #数据集路径
 if channel_type == 'sv':
-     train = './data/H_train_t.mat'
-     val = './data/H_val_t.mat'
-     test = './data/H_test_t.mat'
+     train = './data/H_train_t_n.mat'
+     val = './data/H_val_t_n.mat'
+     test = './data/H_test_t_n.mat'
      mat = h5py.File(train)
      x_train = mat['H_train_t']  #这里应该填matlab里的名字
      x_train = x_train.astype('float32')  # 训练变量类型转换 
@@ -116,11 +118,11 @@ for epoch in range(epochs):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        if i % 200 == 0:
+        if (i+1) % 100 == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                     'Loss {loss:.4f}\t' 
                     'dB_Loss {dB_loss:.4f}\t'.format(
-                epoch, i, len(Dataloader_train), loss=loss.item(), dB_loss=10*math.log10(loss.item())))
+                epoch, (i+1), len(Dataloader_train), loss=loss.item(), dB_loss=10*math.log10(loss.item())))
 
     #切换到test模式
     model.eval()
@@ -135,6 +137,7 @@ for epoch in range(epochs):
         dB_loss = 10 * math.log10(average_loss)
         print('Loss %.4f' % average_loss, 'dB Loss %.4f' % dB_loss)
 
+        '''
         if average_loss < best_loss:
                 torch.save({'state_dict': model.Encoder.state_dict(
                 ), }, 'models/Encoder_'+'CsiNet.pth.tar')
@@ -143,8 +146,10 @@ for epoch in range(epochs):
                 ), }, 'models/Decoder_'+'CsiNet.pth.tar')
                 print("Model saved")
                 best_loss = average_loss
+        '''
 
     t2 = time.time()
+
     print('time: ',t2-t1)
 
 a=1
