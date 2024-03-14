@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import random
 import matplotlib.pyplot as plt
-from ModelDesign import AutoEncoder, DatasetFolder, NMSE_cuda, NMSELoss
+from ModelDesign import AutoEncoder, DatasetFolder, NMSE_cuda, NMSELoss,My_NMSE
 import time
 from network import CsiNetPlus
 #from torchsummary import summary
@@ -17,8 +17,18 @@ gpu_list = '0'
 os.environ["CUDA_VISIBLE_DEVICES"] = gpu_list
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-channel_type = 'sv'  #sv or cost2100
+channel_type = 'cost2100'  #sv or cost2100
 
+def seed_everything(seed=200):
+    random.seed(seed)
+    os.environ['PYHTONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+
+
+seed_everything()
 #训练参数，实部虚部两通道，天线数32，子载波32（截断）
 img_height = 32
 img_width = 32
@@ -26,22 +36,24 @@ img_channels = 2
 img_total = img_height*img_width*img_channels
 
 #训练参数
-epochs=100
+epochs=1000
 batchsize=200
 iter=500
 numworkers=0
-learning_rate = 8e-5
+learning_rate = 1e-3
 
 #实例化模型
-#model=AutoEncoder(img_channels,img_height,img_width,4).to(device)     #CSINET
-model=CsiNetPlus().to(device)                                          #CSINET+
+model=AutoEncoder(img_channels,img_height,img_width,4).to(device)     #CSINET
+#model=CsiNetPlus().to(device)                                          #CSINET+
 
 #损失函数 改用MSE为损失函数
-criterion = NMSELoss(reduction='mean')
-criterion_test = NMSELoss(reduction='mean')
+criterion = nn.MSELoss()
+#MSELoss(reduction='mean')
+criterion_val = nn.MSELoss()
+
 
 #优化器ADAM
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate ,eps=1e-7)
 
 #数据集路径
 if channel_type == 'sv':
@@ -120,24 +132,24 @@ for epoch in range(epochs):
         optimizer.step()
         if (i+1) % 100 == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
-                    'Loss {loss:.4f}\t' 
-                    'dB_Loss {dB_loss:.4f}\t'.format(
+                    'Loss {loss:.8f}\t' 
+                    'dB_Loss {dB_loss:.8f}\t'.format(
                 epoch, (i+1), len(Dataloader_train), loss=loss.item(), dB_loss=10*math.log10(loss.item())))
 
     #切换到test模式
     model.eval()
     total_loss = 0
     with torch.no_grad():
-        for i, input in enumerate(Dataloader_test):
+        for i, input in enumerate(Dataloader_val):
             input = input.cuda().float()
             output = model(input)
-            loss = criterion_test(input, output)
+            loss = criterion_val(input, output)
             total_loss += loss.item()
-        average_loss = total_loss / len(Dataloader_test)
+        average_loss = total_loss / len(Dataloader_val)
         dB_loss = 10 * math.log10(average_loss)
-        print('Loss %.4f' % average_loss, 'dB Loss %.4f' % dB_loss)
+        print('Loss %.8f' % average_loss, 'dB Loss %.8f' % dB_loss)
 
-        '''
+        
         if average_loss < best_loss:
                 torch.save({'state_dict': model.Encoder.state_dict(
                 ), }, 'models/Encoder_'+'CsiNet.pth.tar')
@@ -146,10 +158,22 @@ for epoch in range(epochs):
                 ), }, 'models/Decoder_'+'CsiNet.pth.tar')
                 print("Model saved")
                 best_loss = average_loss
-        '''
+        
 
     t2 = time.time()
 
     print('time: ',t2-t1)
+
+#测试集
+model.eval() 
+with torch.no_grad():
+    x_test = torch.tensor(x_test).to(device)
+    x_hat = model(x_test)
+    nmse = My_NMSE(x_test,x_hat)
+    criterion_test = NMSELoss(reduction='mean')
+    NMSE = criterion_test(x_test,x_hat)
+    dB_NMSE = 10 * math.log10(NMSE)
+    print('test_NMSE %.8f' % NMSE, 'test_NMSE %.8f' % dB_NMSE)
+
 
 a=1

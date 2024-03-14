@@ -14,9 +14,9 @@ class Encoder(nn.Module):
         self.dim2 = dim2
         self.dim3 = dim3
         self.conv = nn.Conv2d(2,2,kernel_size=3,stride=1,padding=1,bias=True)
-        self.norm = nn.BatchNorm2d(2, eps=1e-05, momentum=0.1, affine=True)
+        self.norm = nn.BatchNorm2d(2, eps=1e-03, momentum=0.99, affine=True)
         self.conv2 = nn.Conv2d(2,2,kernel_size=3,stride=1,padding=1,bias=True)
-        self.norm2 = nn.BatchNorm2d(2, eps=1e-05, momentum=0.1, affine=True)
+        self.norm2 = nn.BatchNorm2d(2, eps=1e-03, momentum=0.99, affine=True)
         self.fc = nn.Linear(int(self.dim1*self.dim2*self.dim3),int(self.dim1*self.dim2*self.dim3/q))
         self.activator = nn.LeakyReLU(negative_slope=0.3)
     def forward(self, x):
@@ -40,7 +40,7 @@ class Decoder(nn.Module):
         self.refinenet1 = RefineBlock()
         self.refinenet2 = RefineBlock()
         self.conv = nn.Conv2d(2,2,kernel_size=3,stride=1,padding=1,bias=True)
-        self.norm = nn.BatchNorm2d(2, eps=1e-05, momentum=0.1, affine=True)
+        self.norm = nn.BatchNorm2d(2, eps=1e-03, momentum=0.99, affine=True)
         self.fc = nn.Linear(int(self.dim1*self.dim2*self.dim3/q),int(self.dim1*self.dim2*self.dim3))
         self.activator = nn.Sigmoid()
     def forward(self, x):
@@ -53,8 +53,8 @@ class Decoder(nn.Module):
 
         out = self.refinenet2(out)
 
-        #out = self.activator(self.norm(self.conv(out)))
-        out = self.norm(self.conv(out))
+        out = self.activator(self.norm(self.conv(out)))
+        #out = self.norm(self.conv(out))
 
         return out
 
@@ -71,12 +71,12 @@ class AutoEncoder(nn.Module):
 class RefineBlock(nn.Module):
     def __init__(self):
         super(RefineBlock, self).__init__()
-        self.norm1 = nn.BatchNorm2d(8,eps=1e-05, momentum=0.1, affine=True)
-        self.norm2 = nn.BatchNorm2d(16,eps=1e-05, momentum=0.1, affine=True)
-        self.norm3 = nn.BatchNorm2d(2,eps=1e-05, momentum=0.1, affine=True)
+        self.norm1 = nn.BatchNorm2d(8,eps=1e-03, momentum=0.99, affine= True)
+        self.norm2 = nn.BatchNorm2d(16,eps=1e-03, momentum=0.99, affine= True)
+        self.norm3 = nn.BatchNorm2d(2,eps=1e-03, momentum=0.99, affine= True)
         self.activator = nn.LeakyReLU(negative_slope=0.3)  
-        self.conv1 = nn.Conv2d(2,8,kernel_size=7,stride=1,padding=3)
-        self.conv2 = nn.Conv2d(8,16,kernel_size=5,stride=1,padding=2)
+        self.conv1 = nn.Conv2d(2,8,kernel_size=3,stride=1,padding=1)
+        self.conv2 = nn.Conv2d(8,16,kernel_size=3,stride=1,padding=1)
         self.conv3 = nn.Conv2d(16,2,kernel_size=3,stride=1,padding=1)
 
     def forward(self,Input):
@@ -95,8 +95,8 @@ class RefineBlock(nn.Module):
 
 
 def NMSE_cuda(x, x_hat):
-    x = x.contiguous().view(len(x), -1)
-    x_hat = x_hat.contiguous().view(len(x_hat), -1)
+    x = x.contiguous().view(len(x), -1)-0.5
+    x_hat = x_hat.contiguous().view(len(x_hat), -1)-0.5
     power = torch.sum(abs(x) ** 2, dim=1)
     mse = torch.sum(abs(x - x_hat) ** 2, dim=1) / power
 
@@ -131,3 +131,19 @@ class DatasetFolder(Dataset):
     def __getitem__(self, index):
         return self.matdata[index]
     
+def My_NMSE(x,x_hat):
+    x_real = x[:,0,:,:].view(len(x),-1)-0.5
+    x_imag = x[:,1,:,:].view(len(x),-1)-0.5
+    x_c = x_real+1j*x_imag
+
+    x_hat_real = x_hat[:,0,:,:].view(len(x_hat), -1)-0.5
+    x_hat_imag = x_hat[:,1,:,:].view(len(x_hat), -1)-0.5
+    x_hat_c = x_hat_real+1j*x_hat_imag
+
+    power = torch.sum(torch.abs(x_c)**2, dim=1)
+
+    mse = torch.sum(torch.abs(x_c-x_hat_c)**2, dim=1)
+
+    nmse = torch.mean(mse / power)
+    
+    return nmse
